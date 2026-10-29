@@ -2,6 +2,59 @@
 #include <stdio.h>
 #include <string.h>
 
+static unsigned int error_line;
+
+static void capture_error(cfg_t *cfg, const char *fmt, va_list ap)
+{
+	(void)fmt;
+	(void)ap;
+	error_line = cfg->line;
+}
+
+static void check_comment_lines(void)
+{
+	const struct {
+		const char *text;
+		unsigned int line;
+	} cases[] = {
+		{ "# heading\nunknown = value", 2 },
+		{ "// heading\nunknown = value", 2 },
+		{ "###\n////\nunknown = value", 3 },
+		{ "/* inline */ unknown = value", 1 },
+		{ "/**/unknown = value", 1 },
+		{ "/* first\n * second\n */ unknown = value", 3 },
+		{ "/* first\n * second\n */\nunknown = value", 4 },
+		{ "# first\r\n// second\r\nunknown = value", 3 },
+		{ "# no final newline", 1 },
+		{ "// no final newline", 1 },
+		{ "/* no newline */", 1 },
+		{ "/* two\nlines */", 2 },
+	};
+	cfg_opt_t opts[] = { CFG_END() };
+	cfg_flag_t flags[] = { CFGF_NONE, CFGF_COMMENTS };
+	size_t i, j;
+
+	for (i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
+		for (j = 0; j < sizeof(cases) / sizeof(cases[0]); j++) {
+			cfg_t *cfg = cfg_init(opts, flags[i]);
+			int rc;
+
+			fail_unless(cfg);
+			cfg_set_error_function(cfg, capture_error);
+			error_line = 0;
+			rc = cfg_parse_buf(cfg, cases[j].text);
+			if (strstr(cases[j].text, "unknown")) {
+				fail_unless(rc == CFG_PARSE_ERROR);
+				fail_unless(error_line == cases[j].line);
+			} else {
+				fail_unless(rc == CFG_SUCCESS);
+				fail_unless(cfg->line == cases[j].line);
+			}
+			cfg_free(cfg);
+		}
+	}
+}
+
 /*
  * Regression test for issue #150: a comment must be accepted anywhere
  * between two tokens -- inside a list and inline (C-style) -- not only
@@ -90,6 +143,8 @@ int main(void)
 	fail_unless(cfg_parse_buf(cfg, "foo = \"bar\" #\n") == CFG_SUCCESS);
 	fail_unless(strcmp(cfg_getstr(cfg, "foo"), "bar") == 0);
 	cfg_free(cfg);
+
+	check_comment_lines();
 
 	return 0;
 }
