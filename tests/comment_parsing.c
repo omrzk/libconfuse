@@ -11,6 +11,34 @@ static void capture_error(cfg_t *cfg, const char *fmt, va_list ap)
 	error_line = cfg->line;
 }
 
+static void capture_include_error(cfg_t *cfg, const char *fmt, va_list ap)
+{
+	capture_error(cfg, fmt, ap);
+	fail_unless(cfg->filename);
+	fail_unless(strcmp(cfg->filename, SRC_DIR "/comment_lines.conf") == 0);
+}
+
+static void check_include_comment_lines(void)
+{
+	cfg_opt_t opts[] = {
+		CFG_FUNC("include", &cfg_include),
+		CFG_END()
+	};
+	cfg_flag_t flags[] = { CFGF_NONE, CFGF_COMMENTS };
+	size_t i;
+
+	for (i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
+		cfg_t *cfg = cfg_init(opts, flags[i]);
+
+		fail_unless(cfg);
+		cfg_set_error_function(cfg, capture_include_error);
+		error_line = 0;
+		fail_unless(cfg_parse_buf(cfg, "include(\"" SRC_DIR "/comment_lines.conf\")\n") == CFG_PARSE_ERROR);
+		fail_unless(error_line == 3);
+		cfg_free(cfg);
+	}
+}
+
 static void check_comment_lines(void)
 {
 	const struct {
@@ -144,6 +172,7 @@ int main(void)
 	fail_unless(strcmp(cfg_getstr(cfg, "foo"), "bar") == 0);
 	cfg_free(cfg);
 
+	check_include_comment_lines();
 	check_comment_lines();
 
 	return 0;
